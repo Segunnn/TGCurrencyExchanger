@@ -1,1 +1,3 @@
 Telegram Bot for currency exchange
+
+README is coming soon...

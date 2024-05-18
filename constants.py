@@ -1,11 +1,6 @@
-CURRENCYS_LIST = {
-    "Euro":"EUR",
-    "USA Dollar":"USD",
-    "Japan Yen":"JPY",
-    "Russian Ruble":"RUB"
-}
 
 GREETING_MESSAGE = """
 Hi {}!
-If you want to see all my aviable currencies, use /currencies or /values
-For exchange use /convert <amount>"""
+I am supports 150+ currencies!
+For exchange use /convert <base_currency> <amount> <target_currency> <target_currency> ...
+"""

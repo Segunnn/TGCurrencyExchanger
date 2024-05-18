@@ -1,6 +1,10 @@
-import json
 import requests
-from constants import CURRENCYS_LIST
+import currencyapicom
+from os import getenv
+from loguru import logger
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ApiError(Exception):
@@ -8,49 +12,95 @@ class ApiError(Exception):
     def message(self):
         return "API Error"
 
-class ExchangeCurrencyAPI():
+class BaseCurrencyError(Exception):
+    @property
+    def message(self):
+        return "Base Currency Error"
+
+class QuoteCurrencyError(Exception):
+    @property
+    def message(self):
+        return "Quote Currency Error"
+
+class CurrencyAPI():
     """
     ##### Convert values with `convert()` method
     """
-    @staticmethod
-    def currencies_list_generator(currencies: list) -> str:
-        result = ""
-        for currency in currencies:
-            # %2C - разделитель
-            result = '%2C'.join((result,currency))
-        return result[3:]
+    _client = currencyapicom.Client(getenv("API_KEY"))
+
+    @classmethod
+    def get_aviable_currencys_in_file(cls) -> None:
+        """
+        ### Returns 
+        ```
+        dict[ dict[str : str] ]
+        ```
+        """
+
+        currs: dict = cls._client.currencies()
+
+        with open("currs.txt", "w+") as f:
+            f.write(str(currs))
     
-    @staticmethod
-    def convert(base: str, amount: int) -> list[dict]:
+    @classmethod
+    def convert(cls, 
+                base: str, 
+                amount: int | str | float, 
+                quotes: str | list[str] | tuple[str]) -> list[dict]:
         """
         ### Returns 
         ```
         list[dict[
-                'code': str, 
-                'value': int
+                'code': 'value'
             ]]
         ```
         ### Paremeters
         `base: str` - currency code (USD, EUR) etc.,
-        `amount: int` - amount 
+        `amount: int` - amount,
+        `quote: tuple` - target currencies
         """
 
         # В этой функции генерируется список валют чтобы вставить его в ссылку
-        currencies = ExchangeCurrencyAPI.currencies_list_generator(CURRENCYS_LIST.values())
-
-        # Base - валюта, стоимость которой будут смотреть относительно currencies
-        conn_string = "https://api.currencyapi.com/v3/latest?apikey=cur_live_sXKMGzbDxoSevZQMZwd4Q8mh792kb7P7W8Pfgogx&currencies={}&base_currency={}"
+        url = "https://api.currencyapi.com/v3/latest?apikey=cur_live_sXKMGzbDxoSevZQMZwd4Q8mh792kb7P7W8Pfgogx&currencies={}&base_currency={}"
         
-        if (base in CURRENCYS_LIST.values()):
-            req: requests.Response = requests.get(conn_string.format(currencies, base))
-            content: dict = eval(req.content.decode())['data']
-            
-            result = list()
-            for x in content.values():
-                # Т.к в какой-то момент amount становится str, int(amount) - необходимо
-                x['value'] = x['value']*int(amount) 
-                result.append(x)
+        # Разделяем все валюты "%2C"
+        with open("currs.txt", "r") as f:
+            currencies = eval(f.read())
 
-            return result
-        else:
-            raise ApiError(f"Invalid currency detected")
+        if not currencies:
+            raise BaseCurrencyError("One of the currencies are invalid")
+
+        currencies = currencies['data'].keys()
+
+        base = base.upper()
+
+        if base not in currencies:
+            logger.error("Base not in aviable currencies")
+            raise BaseCurrencyError(f"{base} in not aviable currency")
+        
+        for i, cur in enumerate(quotes):
+            quotes[i] = cur = cur.upper()
+            if cur not in currencies:
+                logger.error("Quote not in aviable currencies")
+                raise QuoteCurrencyError(f"{cur} in not aviable currency")
+            
+        quote: str = "%2C".join(quotes)
+        url = url.format(quote, base)
+
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(e)
+            raise ApiError("Something went wrong with your requests, try again")
+
+        response = response.json()
+        result = list()
+
+        for key, value in response['data'].items():
+            result.append({
+                value['code']: value['value'] * amount
+            })
+
+        return result
+        
